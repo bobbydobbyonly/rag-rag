@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: oklch(1 0 0);
+  --color-surface: oklch(0.982 0.004 255);
+  --color-surface-hover: oklch(0.955 0.007 255);
+  --color-foreground: oklch(0.205 0.02 260);
+  --color-muted: oklch(0.46 0.02 258);
+  --color-border: oklch(0.895 0.008 255);
+  --color-primary: oklch(0.55 0.215 262);
+  --color-primary-foreground: oklch(0.99 0.002 255);
+  --color-ink-button: oklch(0.205 0.02 260);
+  --color-ink-button-fg: oklch(0.99 0.002 255);
+  --color-up: oklch(0.56 0.135 168);
+  --color-down: oklch(0.57 0.21 22);
+  --color-warn: oklch(0.62 0.16 68);
+
+  --font-sans: "Instrument Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --text-display: clamp(2.125rem, 1.65rem + 1.8vw, 3.25rem);
+  --text-display--line-height: 1.08;
+  --text-display--font-weight: 700;
+
+  --text-section: clamp(1.375rem, 1.2rem + 0.5vw, 1.75rem);
+  --text-section--line-height: 1.2;
+  --text-section--font-weight: 700;
+
+  --radius-card: 0.625rem;
+  --radius-control: 0.5rem;
+  --shadow-surface: 0 0 transparent;
+  --shadow-float: 0 10px 30px -6px oklch(0.15 0.02 260 / 0.14);
+}
+
+html {
+  font-synthesis-weight: none;
+  font-family: var(--font-sans);
+}
+
+html[data-theme="dark"] {
+  --color-background: oklch(0.195 0.018 262);
+  --color-surface: oklch(0.24 0.02 262);
+  --color-surface-hover: oklch(0.285 0.022 262);
+  --color-foreground: oklch(0.93 0.008 258);
+  --color-muted: oklch(0.68 0.016 258);
+  --color-border: oklch(0.32 0.02 262);
+  --color-primary: oklch(0.62 0.195 260);
+  --color-primary-foreground: oklch(0.99 0.002 255);
+  --color-ink-button: oklch(0.95 0.006 258);
+  --color-ink-button-fg: oklch(0.195 0.018 262);
+  --color-up: oklch(0.68 0.145 166);
+  --color-down: oklch(0.66 0.2 22);
+  --color-warn: oklch(0.75 0.15 72);
+  --shadow-float: 0 14px 36px -6px oklch(0.08 0.01 260 / 0.55);
+}
+
+.svg-halo {
+  paint-order: stroke;
+  stroke: var(--color-background);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.svg-halo-surface {
+  paint-order: stroke;
+  stroke: var(--color-surface);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *:not(.animate-spin):not(.animate-pulse),
+  *:not(.animate-spin):not(.animate-pulse)::before,
+  *:not(.animate-spin):not(.animate-pulse)::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
