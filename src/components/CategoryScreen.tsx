@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, ChevronLeft, Search, Star } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronLeft, Download, Search, Star } from 'lucide-react';
 import {
   type AssetCategory,
   CATEGORY_TABS,
@@ -196,6 +196,30 @@ export function CategoryScreen({
     );
   }
 
+  const handleExportCsv = () => {
+    const headers = ['Symbol', 'Name', 'Exchange', 'Price', 'Currency', 'ChangePct', 'Volume', 'MarketCap', 'Sector', 'TechnicalRating'];
+    const rows = filtered.map((s) => [
+      s.symbol,
+      `"${s.name.replace(/"/g, '""')}"`,
+      s.exchange,
+      s.price,
+      s.currency,
+      s.changePct,
+      `"${s.volume ?? ''}"`,
+      `"${s.marketCap ?? ''}"`,
+      `"${s.sector ?? ''}"`,
+      s.rating,
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `${category}_screener_pro_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="space-y-10 pb-16 min-w-0">
       {/* Breadcrumb + Screen Switcher */}
@@ -238,6 +262,15 @@ export function CategoryScreen({
             }`}
           >
             Market heatmap
+          </button>
+          <button
+            type="button"
+            onClick={handleExportCsv}
+            title="Export filtered table to CSV"
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-control text-xs font-semibold border border-border bg-surface text-muted hover:text-foreground hover:bg-surface-hover transition-colors whitespace-nowrap ml-1"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Export CSV</span>
           </button>
         </div>
       </div>

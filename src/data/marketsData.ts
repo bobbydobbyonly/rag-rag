@@ -2716,3 +2716,250 @@ function formatTimeLabel(index: number, total: number, timeframe: Timeframe): st
   }
   return `${months[d.getMonth()]} ${d.getDate()}`;
 }
+
+// PRO EXTENSIONS: Paper Trading, Alerts, Level 2 DOM, and Financials
+
+export interface PaperPosition {
+  id: string;
+  symbol: string;
+  side: 'BUY' | 'SELL';
+  quantity: number;
+  entryPrice: number;
+  timestamp: number;
+}
+
+export interface PriceAlert {
+  id: string;
+  symbol: string;
+  targetPrice: number;
+  condition: 'ABOVE' | 'BELOW';
+  createdPrice: number;
+  active: boolean;
+  triggered: boolean;
+  triggeredAt?: string;
+}
+
+export interface OrderBookLevel {
+  price: number;
+  size: number;
+  total: number;
+}
+
+export interface OrderBookData {
+  bids: OrderBookLevel[];
+  asks: OrderBookLevel[];
+  spread: number;
+  spreadPct: number;
+}
+
+export interface RecentTrade {
+  id: string;
+  time: string;
+  price: number;
+  size: number;
+  side: 'BUY' | 'SELL';
+}
+
+export function generateOrderBook(currentPrice: number, decimals: number = 2): OrderBookData {
+  const step = currentPrice > 1000 ? 1.0 : currentPrice > 100 ? 0.25 : currentPrice > 1 ? 0.01 : 0.0001;
+  const bids: OrderBookLevel[] = [];
+  const asks: OrderBookLevel[] = [];
+
+  let cumBid = 0;
+  for (let i = 1; i <= 8; i++) {
+    const price = currentPrice - i * step;
+    const size = Math.round((10 + (Math.sin(i * 1.5) + 1.2) * 45) * (currentPrice > 1000 ? 0.4 : currentPrice > 100 ? 2 : 50));
+    cumBid += size;
+    bids.push({ price: Number(price.toFixed(decimals)), size, total: cumBid });
+  }
+
+  let cumAsk = 0;
+  for (let i = 1; i <= 8; i++) {
+    const price = currentPrice + i * step;
+    const size = Math.round((12 + (Math.cos(i * 1.7) + 1.2) * 42) * (currentPrice > 1000 ? 0.4 : currentPrice > 100 ? 2 : 50));
+    cumAsk += size;
+    asks.push({ price: Number(price.toFixed(decimals)), size, total: cumAsk });
+  }
+
+  const spread = Number((step * 2).toFixed(decimals));
+  const spreadPct = Number(((spread / currentPrice) * 100).toFixed(3));
+
+  return { bids, asks, spread, spreadPct };
+}
+
+export function generateRecentTrades(currentPrice: number, decimals: number = 2): RecentTrade[] {
+  const trades: RecentTrade[] = [];
+  const now = new Date();
+  for (let i = 0; i < 10; i++) {
+    const secsAgo = i * 4 + Math.round(Math.random() * 2);
+    const d = new Date(now.getTime() - secsAgo * 1000);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    const side = Math.random() > 0.48 ? 'BUY' : 'SELL';
+    const delta = (Math.random() - 0.5) * (currentPrice * 0.001);
+    const price = Number((currentPrice + delta).toFixed(decimals));
+    const size = Math.round((5 + Math.random() * 85) * (currentPrice > 1000 ? 0.2 : 2));
+    trades.push({
+      id: `tr-${i}`,
+      time: `${hh}:${mm}:${ss}`,
+      price,
+      size,
+      side,
+    });
+  }
+  return trades;
+}
+
+export interface FinancialQuarter {
+  quarter: string;
+  revenueB: number;
+  netIncomeB: number;
+  operatingMarginPct: number;
+}
+
+export interface FinancialStatementData {
+  symbol: string;
+  quarters: FinancialQuarter[];
+  valuation: {
+    pe: number;
+    forwardPe: number;
+    priceToSales: number;
+    evToEbitda: number;
+    roePct: number;
+    debtToEquity: number;
+  };
+}
+
+export const FINANCIAL_STATEMENTS: Record<string, FinancialStatementData> = {
+  NVDA: {
+    symbol: 'NVDA',
+    quarters: [
+      { quarter: "Q3 '24", revenueB: 18.12, netIncomeB: 9.24, operatingMarginPct: 54.0 },
+      { quarter: "Q4 '24", revenueB: 22.1, netIncomeB: 12.28, operatingMarginPct: 56.8 },
+      { quarter: "Q1 '25", revenueB: 26.04, netIncomeB: 14.88, operatingMarginPct: 60.1 },
+      { quarter: "Q2 '25", revenueB: 30.04, netIncomeB: 16.6, operatingMarginPct: 62.4 },
+      { quarter: "Q3 '25", revenueB: 35.08, netIncomeB: 19.31, operatingMarginPct: 64.2 },
+    ],
+    valuation: {
+      pe: 44.2,
+      forwardPe: 31.8,
+      priceToSales: 28.4,
+      evToEbitda: 36.1,
+      roePct: 115.4,
+      debtToEquity: 0.18,
+    },
+  },
+  AAPL: {
+    symbol: 'AAPL',
+    quarters: [
+      { quarter: "Q4 '24", revenueB: 89.5, netIncomeB: 22.96, operatingMarginPct: 30.1 },
+      { quarter: "Q1 '25", revenueB: 119.58, netIncomeB: 33.92, operatingMarginPct: 33.8 },
+      { quarter: "Q2 '25", revenueB: 90.75, netIncomeB: 23.64, operatingMarginPct: 30.7 },
+      { quarter: "Q3 '25", revenueB: 85.78, netIncomeB: 21.45, operatingMarginPct: 29.8 },
+      { quarter: "Q4 '25", revenueB: 94.93, netIncomeB: 24.12, operatingMarginPct: 31.2 },
+    ],
+    valuation: {
+      pe: 36.8,
+      forwardPe: 29.5,
+      priceToSales: 8.8,
+      evToEbitda: 25.4,
+      roePct: 148.2,
+      debtToEquity: 1.42,
+    },
+  },
+  MSFT: {
+    symbol: 'MSFT',
+    quarters: [
+      { quarter: "Q1 '25", revenueB: 56.52, netIncomeB: 22.29, operatingMarginPct: 44.2 },
+      { quarter: "Q2 '25", revenueB: 62.02, netIncomeB: 21.87, operatingMarginPct: 43.6 },
+      { quarter: "Q3 '25", revenueB: 61.86, netIncomeB: 21.94, operatingMarginPct: 44.1 },
+      { quarter: "Q4 '25", revenueB: 64.73, netIncomeB: 22.04, operatingMarginPct: 43.2 },
+      { quarter: "Q1 '26", revenueB: 65.59, netIncomeB: 24.67, operatingMarginPct: 45.3 },
+    ],
+    valuation: {
+      pe: 34.5,
+      forwardPe: 28.2,
+      priceToSales: 12.4,
+      evToEbitda: 22.8,
+      roePct: 38.6,
+      debtToEquity: 0.42,
+    },
+  },
+  BTCUSD: {
+    symbol: 'BTCUSD',
+    quarters: [
+      { quarter: "Q4 '24", revenueB: 1.4, netIncomeB: 0.8, operatingMarginPct: 65.0 },
+      { quarter: "Q1 '25", revenueB: 2.1, netIncomeB: 1.3, operatingMarginPct: 70.0 },
+      { quarter: "Q2 '25", revenueB: 2.8, netIncomeB: 1.9, operatingMarginPct: 74.0 },
+      { quarter: "Q3 '25", revenueB: 3.4, netIncomeB: 2.4, operatingMarginPct: 78.0 },
+      { quarter: "Q4 '25", revenueB: 4.2, netIncomeB: 3.1, operatingMarginPct: 82.0 },
+    ],
+    valuation: {
+      pe: 52.0,
+      forwardPe: 41.0,
+      priceToSales: 35.0,
+      evToEbitda: 42.0,
+      roePct: 45.0,
+      debtToEquity: 0.05,
+    },
+  },
+};
+
+export interface MarketNewsItem {
+  id: string;
+  title: string;
+  source: string;
+  timeAgo: string;
+  sentiment: 'Bullish' | 'Bearish' | 'Neutral';
+  summary: string;
+  category: string;
+}
+
+export const BREAKING_MARKET_NEWS: MarketNewsItem[] = [
+  {
+    id: 'news-1',
+    title: 'Fed Signals Steady Policy Stance as Core Inflation Measures Cool Toward Target',
+    source: 'Bloomberg Terminal',
+    timeAgo: '12m ago',
+    sentiment: 'Bullish',
+    summary: 'Federal Reserve officials emphasized patience with interest rate policy while acknowledging continued moderation in wage pressures and core services inflation.',
+    category: 'Macroeconomics',
+  },
+  {
+    id: 'news-2',
+    title: 'NVIDIA Expands High-Bandwidth Memory Architecture with Next-Gen Server Clusters',
+    source: 'Reuters Financial',
+    timeAgo: '28m ago',
+    sentiment: 'Bullish',
+    summary: 'Hyperscalers ramped capital expenditure forecasts for enterprise GPU infrastructure, driving semiconductor equipment orders across Asian and European suppliers.',
+    category: 'Equities',
+  },
+  {
+    id: 'news-3',
+    title: 'Bitcoin Consolidates Near All-Time Highs as Spot ETF Net Inflows Accelerate',
+    source: 'CoinDesk Pro',
+    timeAgo: '45m ago',
+    sentiment: 'Bullish',
+    summary: 'Institutional custodial balances rose for the sixth straight week as sovereign wealth funds and treasury departments increase digital asset allocation models.',
+    category: 'Crypto',
+  },
+  {
+    id: 'news-4',
+    title: 'Crude Oil Steady Following Middle East Export Data and OPEC+ Quota Review',
+    source: 'Dow Jones Newswires',
+    timeAgo: '1h ago',
+    sentiment: 'Neutral',
+    summary: 'Brent crude held above $75 a barrel as crude inventory draws in the US Gulf Coast balanced higher non-OPEC deepwater output projections.',
+    category: 'Commodities',
+  },
+  {
+    id: 'news-5',
+    title: 'Global Yield Curves Steepens as 10-Year Sovereign Spreads Narrow Against Bunds',
+    source: 'Financial Times',
+    timeAgo: '2h ago',
+    sentiment: 'Neutral',
+    summary: 'European and US fixed income markets saw portfolio rotation into mid-curve duration ahead of tomorrow auctions and flash retail sales indicators.',
+    category: 'Fixed Income',
+  },
+];

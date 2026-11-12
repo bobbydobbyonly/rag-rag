@@ -1,12 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Bell,
   BookmarkCheck,
   ChevronDown,
+  Columns2,
+  DollarSign,
+  Grid2X2,
+  LayoutGrid,
   Menu,
   Moon,
   Pause,
   Play,
+  Rows2,
   Search,
+  Square,
   Sun,
   X,
 } from 'lucide-react';
@@ -17,16 +24,24 @@ import {
   CATEGORY_TABS,
   COUNTRY_SCOPES,
   type MarketSymbol,
+  type PaperPosition,
+  type PriceAlert,
 } from './data/marketsData';
 import { CategoryScreen } from './components/CategoryScreen';
+import { MultiChartGrid } from './components/MultiChartGrid';
 import { OverviewScreen } from './components/OverviewScreen';
+import { ProTickerTape } from './components/ProTickerTape';
 import { SearchModal } from './components/SearchModal';
 import { SymbolScreen } from './components/SymbolScreen';
-import { Button } from './components/ui';
+import { Button, formatPrice } from './components/ui';
 import { WatchlistDrawer } from './components/WatchlistDrawer';
 
 const WATCHLIST_STORAGE_KEY = 'tv_markets_watchlist_v1';
 const THEME_STORAGE_KEY = 'tv_markets_theme_v1';
+const POSITIONS_STORAGE_KEY = 'tv_markets_positions_v1';
+const BALANCE_STORAGE_KEY = 'tv_markets_balance_v1';
+const ALERTS_STORAGE_KEY = 'tv_markets_alerts_v1';
+
 const DEFAULT_WATCHLIST = [
   'SPX',
   'NDX',
@@ -38,6 +53,8 @@ const DEFAULT_WATCHLIST = [
   'EURUSD',
   'US10Y',
 ];
+
+export type ChartLayoutMode = 'single' | 'split-h' | 'split-v' | 'quad';
 
 function loadWatchlist(): string[] {
   try {
@@ -53,13 +70,82 @@ function loadWatchlist(): string[] {
   }
 }
 
+function loadPositions(): PaperPosition[] {
+  try {
+    const raw = window.localStorage.getItem(POSITIONS_STORAGE_KEY);
+    if (!raw) {
+      return [
+        {
+          id: 'pos-1',
+          symbol: 'NVDA',
+          side: 'BUY',
+          quantity: 25,
+          entryPrice: 164.2,
+          timestamp: Date.now() - 86400000,
+        },
+        {
+          id: 'pos-2',
+          symbol: 'BTCUSD',
+          side: 'BUY',
+          quantity: 0.5,
+          entryPrice: 94800.0,
+          timestamp: Date.now() - 172800000,
+        },
+      ];
+    }
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+function loadBalance(): number {
+  try {
+    const raw = window.localStorage.getItem(BALANCE_STORAGE_KEY);
+    return raw ? parseFloat(raw) || 100000 : 100000;
+  } catch {
+    return 100000;
+  }
+}
+
+function loadAlerts(): PriceAlert[] {
+  try {
+    const raw = window.localStorage.getItem(ALERTS_STORAGE_KEY);
+    if (!raw) {
+      return [
+        {
+          id: 'al-1',
+          symbol: 'BTCUSD',
+          targetPrice: 100000,
+          condition: 'ABOVE',
+          createdPrice: 98420.5,
+          active: true,
+          triggered: false,
+        },
+        {
+          id: 'al-2',
+          symbol: 'NVDA',
+          targetPrice: 180,
+          condition: 'ABOVE',
+          createdPrice: 171.48,
+          active: true,
+          triggered: false,
+        },
+      ];
+    }
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
 function loadTheme(): 'light' | 'dark' {
   try {
     const raw = window.localStorage.getItem(THEME_STORAGE_KEY);
     if (raw === 'dark' || raw === 'light') return raw;
-    return 'light';
+    return 'dark'; // Pro trading terminals look stunning in dark mode
   } catch {
-    return 'light';
+    return 'dark';
   }
 }
 
@@ -84,6 +170,10 @@ export default function App() {
   const [symbols, setSymbols] = useState<MarketSymbol[]>(ALL_SYMBOLS);
   const [liveFeed, setLiveFeed] = useState<boolean>(true);
 
+  // Layout mode: single, 2-split horizontal, 2-split vertical, quad
+  const [layoutMode, setLayoutMode] = useState<ChartLayoutMode>('single');
+  const [layoutMenuOpen, setLayoutMenuOpen] = useState<boolean>(false);
+
   const [activeCategory, setActiveCategory] = useState<AssetCategory>('overview');
   const [activeSymbolId, setActiveSymbolId] = useState<string | null>(null);
   const [countryCode, setCountryCode] = useState<string>('US');
@@ -93,7 +183,13 @@ export default function App() {
   const [watchlistOpen, setWatchlistOpen] = useState<boolean>(false);
   const [searchOpen, setSearchOpen] = useState<boolean>(false);
   const [mobileNavOpen, setMobileNavOpen] = useState<boolean>(false);
-  const [lookFirstFailed, setLookFirstFailed] = useState<boolean>(false);
+
+  // Paper trading state
+  const [positions, setPositions] = useState<PaperPosition[]>(loadPositions);
+  const [cashBalance, setCashBalance] = useState<number>(loadBalance);
+
+  // Alerts state
+  const [alerts, setAlerts] = useState<PriceAlert[]>(loadAlerts);
 
   const [statusNotice, setStatusNotice] = useState<{
     text: string;
@@ -101,26 +197,24 @@ export default function App() {
   } | null>(null);
   const statusTimerRef = useRef<number | null>(null);
 
-  // Sync theme attribute on <html>
+  // Sync theme
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-    } catch {
-      // Ignore storage quota errors
-    }
+    } catch {}
   }, [theme]);
 
-  // Persist watchlist
+  // Sync positions & balance
   useEffect(() => {
     try {
-      window.localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(watchlist));
-    } catch {
-      // Ignore storage quota errors
-    }
-  }, [watchlist]);
+      window.localStorage.setItem(POSITIONS_STORAGE_KEY, JSON.stringify(positions));
+      window.localStorage.setItem(BALANCE_STORAGE_KEY, cashBalance.toString());
+      window.localStorage.setItem(ALERTS_STORAGE_KEY, JSON.stringify(alerts));
+    } catch {}
+  }, [positions, cashBalance, alerts]);
 
-  // Global Ctrl+K / Cmd+K shortcut for Symbol Search
+  // Global Ctrl+K / Cmd+K
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -132,27 +226,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  // Gentle simulated live market ticks
-  useEffect(() => {
-    if (!liveFeed) return;
-    const interval = window.setInterval(() => {
-      setSymbols((prev) =>
-        prev.map((item, idx) => {
-          if (Math.random() > 0.28) return item;
-          const basisMove = (Math.random() - 0.492) * 0.0024;
-          const nextPrice = Math.max(0.000001, item.price * (1 + basisMove));
-          const nextPct = Number((item.changePct + basisMove * 100).toFixed(2));
-          return {
-            ...item,
-            price: nextPrice,
-            changePct: idx % 9 === 0 ? item.changePct : nextPct,
-          };
-        })
-      );
-    }, 2800);
-    return () => window.clearInterval(interval);
-  }, [liveFeed]);
-
   const showStatus = useCallback((text: string, undoSymbol?: string) => {
     if (statusTimerRef.current) {
       window.clearTimeout(statusTimerRef.current);
@@ -162,6 +235,50 @@ export default function App() {
       setStatusNotice(null);
     }, 4500);
   }, []);
+
+  // Simulated live ticks + alert triggers
+  useEffect(() => {
+    if (!liveFeed) return;
+    const interval = window.setInterval(() => {
+      setSymbols((prev) => {
+        const nextSymbols = prev.map((item, idx) => {
+          if (Math.random() > 0.32) return item;
+          const basisMove = (Math.random() - 0.491) * 0.0022;
+          const nextPrice = Math.max(0.000001, item.price * (1 + basisMove));
+          const nextPct = Number((item.changePct + basisMove * 100).toFixed(2));
+
+          // Check alerts for this symbol
+          alerts.forEach((al) => {
+            if (al.active && !al.triggered && al.symbol === item.symbol) {
+              const triggered =
+                (al.condition === 'ABOVE' && nextPrice >= al.targetPrice) ||
+                (al.condition === 'BELOW' && nextPrice <= al.targetPrice);
+              if (triggered) {
+                showStatus(
+                  `🔔 PRO ALERT: ${item.symbol} reached target price of ${formatPrice(al.targetPrice, 2)} ${item.currency}!`
+                );
+                setAlerts((all) =>
+                  all.map((a) =>
+                    a.id === al.id
+                      ? { ...a, triggered: true, triggeredAt: new Date().toLocaleTimeString() }
+                      : a
+                  )
+                );
+              }
+            }
+          });
+
+          return {
+            ...item,
+            price: nextPrice,
+            changePct: idx % 8 === 0 ? item.changePct : nextPct,
+          };
+        });
+        return nextSymbols;
+      });
+    }, 2400);
+    return () => window.clearInterval(interval);
+  }, [liveFeed, alerts, showStatus]);
 
   const handleToggleWatch = useCallback(
     (sym: string) => {
@@ -194,6 +311,77 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
+  // Paper trading handlers
+  const handleOpenPosition = useCallback((newPos: Omit<PaperPosition, 'id' | 'timestamp'>) => {
+    const cost = newPos.quantity * newPos.entryPrice;
+    if (newPos.side === 'BUY') {
+      setCashBalance((b) => b - cost);
+    } else {
+      setCashBalance((b) => b + cost);
+    }
+    setPositions((prev) => [
+      {
+        id: `pos-${Date.now()}`,
+        ...newPos,
+        timestamp: Date.now(),
+      },
+      ...prev,
+    ]);
+  }, []);
+
+  const handleClosePosition = useCallback(
+    (id: string) => {
+      const pos = positions.find((p) => p.id === id);
+      if (!pos) return;
+      const currentSym = symbols.find((s) => s.symbol === pos.symbol);
+      const closePrice = currentSym ? currentSym.price : pos.entryPrice;
+      const proceeds = pos.quantity * closePrice;
+
+      if (pos.side === 'BUY') {
+        setCashBalance((b) => b + proceeds);
+      } else {
+        const initialCost = pos.quantity * pos.entryPrice;
+        const profit = initialCost - proceeds;
+        setCashBalance((b) => b + initialCost + profit);
+      }
+      setPositions((prev) => prev.filter((p) => p.id !== id));
+      showStatus(`Closed position for ${pos.quantity} ${pos.symbol} @ ${formatPrice(closePrice, 2)}`);
+    },
+    [positions, symbols, showStatus]
+  );
+
+  const handleResetTradingAccount = useCallback(() => {
+    setPositions([]);
+    setCashBalance(100000);
+    showStatus('Paper trading account reset to initial $100,000 cash balance.');
+  }, [showStatus]);
+
+  // Alerts handlers
+  const handleAddAlert = useCallback((newAlert: Omit<PriceAlert, 'id' | 'createdPrice' | 'triggered'>) => {
+    const cur = symbols.find((s) => s.symbol === newAlert.symbol);
+    setAlerts((prev) => [
+      {
+        id: `al-${Date.now()}`,
+        ...newAlert,
+        createdPrice: cur?.price ?? 100,
+        triggered: false,
+      },
+      ...prev,
+    ]);
+    showStatus(`Alert set for ${newAlert.symbol} ${newAlert.condition === 'ABOVE' ? '≥' : '≤'} ${newAlert.targetPrice}`);
+  }, [symbols, showStatus]);
+
+  const handleToggleAlert = useCallback((id: string) => {
+    setAlerts((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, active: !a.active } : a))
+    );
+  }, []);
+
+  const handleDeleteAlert = useCallback((id: string) => {
+    setAlerts((prev) => prev.filter((a) => a.id !== id));
+    showStatus('Alert deleted');
+  }, [showStatus]);
+
   const countryScope = useMemo(
     () => COUNTRY_SCOPES.find((c) => c.code === countryCode) ?? COUNTRY_SCOPES[0],
     [countryCode]
@@ -204,93 +392,121 @@ export default function App() {
     [activeSymbolId, symbols]
   );
 
-  const lookFirstSrc =
-    theme === 'dark'
-      ? 'https://static.tradingview.com/static/bundles/look-first-dark.8cb7462c584f600e8f31.svg'
-      : 'https://static.tradingview.com/static/bundles/look-first-light.74b5bba06f657157cdb4.svg';
+  // Total portfolio value
+  const totalEquity = useMemo(() => {
+    const unrealized = positions.reduce((acc, pos) => {
+      const cur = symbols.find((s) => s.symbol === pos.symbol);
+      const curPrice = cur ? cur.price : pos.entryPrice;
+      const delta = pos.side === 'BUY' ? curPrice - pos.entryPrice : pos.entryPrice - curPrice;
+      return acc + delta * pos.quantity;
+    }, 0);
+    return cashBalance + unrealized;
+  }, [positions, symbols, cashBalance]);
 
   return (
     <MotionConfig reducedMotion="user">
-      <div className="min-h-dvh flex flex-col bg-background text-foreground">
-        {/* TradingView Top Header */}
-        <header className="sticky top-0 z-30 bg-background border-b border-border">
-          <div className="max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
-            {/* Brand + Search + Links */}
-            <div className="flex items-center gap-4 lg:gap-6 min-w-0">
+      <div className="min-h-dvh flex flex-col bg-background text-foreground font-sans">
+        {/* PRO LIVE TICKER TAPE */}
+        <ProTickerTape symbols={symbols} onSelectSymbol={handleSelectSymbol} />
+
+        {/* PRO TERMINAL TOP HEADER */}
+        <header className="sticky top-0 z-30 bg-background/95 backdrop-blur-sm border-b border-border">
+          <div className="max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between gap-3">
+            {/* Left Brand + Pro Tier Badge */}
+            <div className="flex items-center gap-3 sm:gap-5 min-w-0">
               <button
                 type="button"
-                onClick={() => handleOpenCategory('overview')}
-                className="inline-flex items-center gap-2 text-lg font-bold tracking-tight text-foreground shrink-0 focus-visible:outline-2 focus-visible:outline-primary rounded-sm"
+                onClick={() => {
+                  setLayoutMode('single');
+                  handleOpenCategory('overview');
+                }}
+                className="inline-flex items-center gap-2 text-base sm:text-lg font-bold tracking-tight text-foreground shrink-0 focus-visible:outline-2 focus-visible:outline-primary rounded-sm"
               >
                 <TradingViewMark />
-                <span>TradingView</span>
+                <span className="hidden sm:inline">TradingView</span>
+                <span className="px-1.5 py-0.5 rounded text-[10px] bg-primary text-primary-foreground font-extrabold uppercase tracking-wider">
+                  PRO
+                </span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setSearchOpen(true)}
                 aria-label="Open symbol search"
-                className="hidden sm:inline-flex items-center gap-2.5 min-h-9 px-3.5 rounded-full bg-surface hover:bg-surface-hover border border-border text-sm text-muted transition-colors duration-150 shrink-0"
+                className="hidden sm:inline-flex items-center gap-2 min-h-8 px-3 rounded-full bg-surface hover:bg-surface-hover border border-border text-xs text-muted transition-colors duration-150 shrink-0"
               >
-                <Search className="w-4 h-4" />
-                <span>Search</span>
-                <span className="text-[11px] font-mono uppercase tracking-wider text-muted/80 ml-2">
-                  [⌘K]
-                </span>
+                <Search className="w-3.5 h-3.5" />
+                <span>Search Markets</span>
+                <span className="text-[10px] font-mono text-muted/80 ml-2">[⌘K]</span>
               </button>
 
-              <nav aria-label="Primary navigation" className="hidden md:flex items-center gap-1">
+              <nav aria-label="Primary navigation" className="hidden lg:flex items-center gap-1 text-xs font-semibold">
                 <button
                   type="button"
-                  onClick={() => handleOpenCategory('overview')}
-                  className={`px-3 py-1.5 rounded-control text-sm font-medium whitespace-nowrap transition-colors duration-150 ${
-                    !activeSymbol && activeCategory === 'overview'
-                      ? 'text-primary font-semibold'
-                      : 'text-foreground hover:bg-surface-hover'
+                  onClick={() => {
+                    setLayoutMode('single');
+                    handleOpenCategory('overview');
+                  }}
+                  className={`px-2.5 py-1 rounded-control transition-colors ${
+                    !activeSymbol && layoutMode === 'single' && activeCategory === 'overview'
+                      ? 'text-primary font-bold bg-surface'
+                      : 'text-muted hover:text-foreground'
                   }`}
                 >
                   Markets
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleOpenCategory('stocks')}
-                  className={`px-3 py-1.5 rounded-control text-sm font-medium whitespace-nowrap transition-colors duration-150 ${
+                  onClick={() => {
+                    setLayoutMode('single');
+                    handleOpenCategory('stocks');
+                  }}
+                  className={`px-2.5 py-1 rounded-control transition-colors ${
                     !activeSymbol && activeCategory === 'stocks'
-                      ? 'text-primary font-semibold'
-                      : 'text-foreground hover:bg-surface-hover'
+                      ? 'text-primary font-bold bg-surface'
+                      : 'text-muted hover:text-foreground'
                   }`}
                 >
                   Screener
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleOpenCategory('crypto')}
-                  className={`px-3 py-1.5 rounded-control text-sm font-medium whitespace-nowrap transition-colors duration-150 ${
+                  onClick={() => {
+                    setLayoutMode('single');
+                    handleOpenCategory('crypto');
+                  }}
+                  className={`px-2.5 py-1 rounded-control transition-colors ${
                     !activeSymbol && activeCategory === 'crypto'
-                      ? 'text-primary font-semibold'
-                      : 'text-foreground hover:bg-surface-hover'
+                      ? 'text-primary font-bold bg-surface'
+                      : 'text-muted hover:text-foreground'
                   }`}
                 >
                   Crypto
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleOpenCategory('bonds')}
-                  className={`px-3 py-1.5 rounded-control text-sm font-medium whitespace-nowrap transition-colors duration-150 ${
+                  onClick={() => {
+                    setLayoutMode('single');
+                    handleOpenCategory('bonds');
+                  }}
+                  className={`px-2.5 py-1 rounded-control transition-colors ${
                     !activeSymbol && activeCategory === 'bonds'
-                      ? 'text-primary font-semibold'
-                      : 'text-foreground hover:bg-surface-hover'
+                      ? 'text-primary font-bold bg-surface'
+                      : 'text-muted hover:text-foreground'
                   }`}
                 >
-                  Yield curves
+                  Yield Curves
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleOpenCategory('economy')}
-                  className={`px-3 py-1.5 rounded-control text-sm font-medium whitespace-nowrap transition-colors duration-150 ${
+                  onClick={() => {
+                    setLayoutMode('single');
+                    handleOpenCategory('economy');
+                  }}
+                  className={`px-2.5 py-1 rounded-control transition-colors ${
                     !activeSymbol && activeCategory === 'economy'
-                      ? 'text-primary font-semibold'
-                      : 'text-foreground hover:bg-surface-hover'
+                      ? 'text-primary font-bold bg-surface'
+                      : 'text-muted hover:text-foreground'
                   }`}
                 >
                   Economy
@@ -298,154 +514,241 @@ export default function App() {
               </nav>
             </div>
 
-            {/* Right Controls */}
-            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Right Tools: Multi-Chart Layouts, Paper Trading Balance, Watchlist, Theme */}
+            <div className="flex items-center gap-2 shrink-0">
+              {/* Pro Multi-Chart Layout Switcher */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setLayoutMenuOpen((v) => !v)}
+                  aria-label="Multi-chart layouts"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-control text-xs font-semibold border border-border bg-surface hover:bg-surface-hover text-foreground transition-colors"
+                >
+                  {layoutMode === 'single' ? (
+                    <Square className="w-3.5 h-3.5" />
+                  ) : layoutMode === 'split-h' ? (
+                    <Columns2 className="w-3.5 h-3.5 text-primary" />
+                  ) : layoutMode === 'split-v' ? (
+                    <Rows2 className="w-3.5 h-3.5 text-primary" />
+                  ) : (
+                    <Grid2X2 className="w-3.5 h-3.5 text-primary" />
+                  )}
+                  <span className="hidden md:inline">Layout</span>
+                  <ChevronDown className="w-3 h-3 text-muted" />
+                </button>
+
+                {layoutMenuOpen && (
+                  <div className="absolute right-0 top-full mt-1.5 z-40 w-48 rounded-card bg-background border border-border shadow-xl p-1.5 space-y-1 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLayoutMode('single');
+                        setLayoutMenuOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-control text-left ${
+                        layoutMode === 'single' ? 'bg-surface font-bold text-primary' : 'hover:bg-surface-hover text-foreground'
+                      }`}
+                    >
+                      <Square className="w-3.5 h-3.5" />
+                      <span>Single Chart</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLayoutMode('split-h');
+                        setActiveSymbolId(null);
+                        setLayoutMenuOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-control text-left ${
+                        layoutMode === 'split-h' ? 'bg-surface font-bold text-primary' : 'hover:bg-surface-hover text-foreground'
+                      }`}
+                    >
+                      <Columns2 className="w-3.5 h-3.5" />
+                      <span>Dual Split (2x1)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLayoutMode('split-v');
+                        setActiveSymbolId(null);
+                        setLayoutMenuOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-control text-left ${
+                        layoutMode === 'split-v' ? 'bg-surface font-bold text-primary' : 'hover:bg-surface-hover text-foreground'
+                      }`}
+                    >
+                      <Rows2 className="w-3.5 h-3.5" />
+                      <span>Stacked Split (1x2)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLayoutMode('quad');
+                        setActiveSymbolId(null);
+                        setLayoutMenuOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-control text-left ${
+                        layoutMode === 'quad' ? 'bg-surface font-bold text-primary' : 'hover:bg-surface-hover text-foreground'
+                      }`}
+                    >
+                      <Grid2X2 className="w-3.5 h-3.5" />
+                      <span>Quad Grid (2x2)</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Simulated Paper Trading Balance Pill */}
               <button
                 type="button"
-                onClick={() => setSearchOpen(true)}
-                aria-label="Search symbols"
-                className="sm:hidden p-2 rounded-control text-foreground hover:bg-surface-hover"
+                onClick={() => {
+                  if (activeSymbol) {
+                    // Symbol screen paper trading tab
+                  } else {
+                    handleSelectSymbol('NVDA');
+                  }
+                }}
+                title="Paper Trading Account Balance"
+                className="hidden xl:inline-flex items-center gap-1.5 px-3 py-1 rounded-control bg-surface border border-border text-xs tabular-nums font-mono"
               >
-                <Search className="w-4 h-4" />
+                <DollarSign className="w-3.5 h-3.5 text-up" />
+                <span className="text-muted">Equity:</span>
+                <span className="font-bold text-foreground">${formatPrice(totalEquity, 2)}</span>
               </button>
 
+              {/* Pause/Resume Live Ticks */}
               <button
                 type="button"
                 onClick={() => setLiveFeed((v) => !v)}
                 aria-pressed={liveFeed}
-                aria-label={liveFeed ? 'Pause simulated live quotes' : 'Resume simulated live quotes'}
-                title={liveFeed ? 'Pause quote updates' : 'Resume quote updates'}
-                className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-control text-xs font-medium text-muted hover:text-foreground hover:bg-surface-hover transition-colors duration-150 whitespace-nowrap"
+                title={liveFeed ? 'Pause real-time market simulation' : 'Resume real-time market simulation'}
+                className="p-1.5 rounded-control text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
               >
                 {liveFeed ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                <span>{liveFeed ? 'Quotes active' : 'Quotes paused'}</span>
               </button>
 
+              {/* Watchlist Trigger */}
               <button
                 type="button"
                 onClick={() => setWatchlistOpen((v) => !v)}
-                aria-expanded={watchlistOpen}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control text-xs sm:text-sm font-medium border border-border bg-surface hover:bg-surface-hover text-foreground transition-colors duration-150 whitespace-nowrap"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-control text-xs font-semibold border border-border bg-surface hover:bg-surface-hover text-foreground transition-colors"
               >
-                <BookmarkCheck className="w-4 h-4 text-primary" />
+                <BookmarkCheck className="w-3.5 h-3.5 text-primary" />
                 <span className="hidden sm:inline">Watchlist</span>
-                <span className="tabular-nums text-muted">({watchlist.length})</span>
+                <span className="text-muted tabular-nums">({watchlist.length})</span>
               </button>
 
+              {/* Theme Toggle */}
               <button
                 type="button"
                 onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
-                aria-label={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
-                className="p-2 rounded-control text-foreground hover:bg-surface-hover transition-colors duration-150"
+                aria-label={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+                className="p-1.5 rounded-control text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
               >
                 {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
               </button>
 
-              <Button
-                tone="ink"
-                onClick={() => handleSelectSymbol(activeSymbol?.symbol ?? 'SPX')}
-                className="hidden sm:inline-flex min-h-9 px-3.5 text-xs sm:text-sm"
-              >
-                Supercharts
-              </Button>
-
+              {/* Mobile Menu Toggle */}
               <button
                 type="button"
                 onClick={() => setMobileNavOpen((v) => !v)}
-                aria-label="Toggle navigation menu"
-                aria-expanded={mobileNavOpen}
-                className="md:hidden p-2 rounded-control text-foreground hover:bg-surface-hover"
+                className="md:hidden p-1.5 rounded-control text-muted hover:text-foreground"
               >
                 {mobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
             </div>
           </div>
-
-          {/* Mobile Collapsible Menu */}
-          {mobileNavOpen && (
-            <div className="md:hidden border-t border-border bg-background px-4 py-3 flex flex-wrap gap-2">
-              {CATEGORY_TABS.map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => {
-                    handleOpenCategory(tab.id);
-                    setMobileNavOpen(false);
-                  }}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${
-                    !activeSymbol && activeCategory === tab.id
-                      ? 'bg-ink-button text-ink-button-fg'
-                      : 'bg-surface text-foreground'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-          )}
         </header>
 
-        {/* Inline Status Line (role="status" for accessible Undo feedback) */}
+        {/* Global Alert Notification Banner */}
         {statusNotice && (
-          <div className="bg-surface border-b border-border">
+          <div className="bg-surface border-b border-border text-xs py-2 px-4">
             <div
               role="status"
-              className="max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8 py-2 flex items-center justify-between gap-3 text-xs"
+              className="max-w-[90rem] mx-auto flex items-center justify-between gap-3"
             >
-              <span className="text-foreground font-medium">{statusNotice.text}</span>
-              <div className="flex items-center gap-3">
-                {statusNotice.undoSymbol && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const sym = statusNotice.undoSymbol!;
-                      setStatusNotice(null);
-                      handleToggleWatch(sym);
-                    }}
-                    className="font-semibold text-primary hover:underline"
-                  >
-                    Undo
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setStatusNotice(null)}
-                  className="text-muted hover:text-foreground"
-                >
-                  Dismiss
-                </button>
-              </div>
+              <span className="text-foreground font-semibold">{statusNotice.text}</span>
+              <button
+                type="button"
+                onClick={() => setStatusNotice(null)}
+                className="text-muted hover:text-foreground font-semibold"
+              >
+                Dismiss
+              </button>
             </div>
           </div>
         )}
 
-        {/* Main Content */}
-        <main className="flex-1 w-full max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8 pt-8">
-          {activeSymbol ? (
+        {/* Main View Area */}
+        <main className="flex-1 w-full max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+          {/* MULTI-CHART PRO LAYOUT (When user selects Split or Quad) */}
+          {layoutMode !== 'single' && !activeSymbol ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-border">
+                <div className="flex items-center gap-2">
+                  <h1 className="text-lg font-bold text-foreground">
+                    Pro Multi-Chart Station
+                  </h1>
+                  <span className="px-2 py-0.5 rounded text-[10px] bg-primary/20 text-primary font-bold">
+                    {layoutMode.toUpperCase()}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setLayoutMode('single')}
+                  className="text-xs text-primary font-medium hover:underline"
+                >
+                  Return to Single Overview
+                </button>
+              </div>
+
+              <MultiChartGrid
+                layout={layoutMode}
+                symbols={symbols}
+                onOpenSymbol={handleSelectSymbol}
+                onQuickTrade={(side, price) => {
+                  handleOpenPosition({
+                    symbol: 'NVDA',
+                    side,
+                    quantity: 10,
+                    entryPrice: price,
+                  });
+                }}
+              />
+            </div>
+          ) : activeSymbol ? (
             <SymbolScreen
               symbol={activeSymbol}
               allSymbols={symbols}
               isWatched={watchlist.includes(activeSymbol.symbol)}
+              positions={positions.filter((p) => p.symbol === activeSymbol.symbol)}
+              alerts={alerts}
+              cashBalance={cashBalance}
               onToggleWatch={handleToggleWatch}
+              onOpenPosition={handleOpenPosition}
+              onClosePosition={handleClosePosition}
+              onResetTradingAccount={handleResetTradingAccount}
+              onAddAlert={handleAddAlert}
+              onToggleAlert={handleToggleAlert}
+              onDeleteAlert={handleDeleteAlert}
               onSelectSymbol={handleSelectSymbol}
               onOpenCategory={handleOpenCategory}
               onBackOverview={() => setActiveSymbolId(null)}
             />
           ) : (
             <>
-              {/* Hero Heading: Markets, everywhere + Country Switcher */}
-              <div className="relative mb-6">
+              {/* Markets Header & Country Switcher */}
+              <div className="relative mb-5 flex flex-wrap items-center justify-between gap-4">
                 <button
                   type="button"
                   onClick={() => setCountryMenuOpen((v) => !v)}
                   aria-expanded={countryMenuOpen}
-                  aria-haspopup="listbox"
-                  className="group inline-flex items-center gap-2.5 text-left focus-visible:outline-2 focus-visible:outline-primary rounded-sm"
+                  className="group inline-flex items-center gap-3 text-left focus-visible:outline-2 focus-visible:outline-primary rounded-sm"
                 >
                   <h1 className="text-display tracking-tight text-foreground">
                     Markets, everywhere
                   </h1>
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface group-hover:bg-surface-hover border border-border text-xs font-medium text-foreground mt-1">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface group-hover:bg-surface-hover border border-border text-xs font-semibold text-foreground mt-1 shadow-xs">
                     <img
                       src={countryScope.flagUrl}
                       alt=""
@@ -458,24 +761,18 @@ export default function App() {
                 </button>
 
                 {countryMenuOpen && (
-                  <div
-                    role="listbox"
-                    aria-label="Select regional market focus"
-                    className="absolute left-0 top-full mt-2 z-30 w-64 rounded-card bg-background border border-border shadow-(--shadow-float) py-1.5 divide-y divide-border/40"
-                  >
+                  <div className="absolute left-0 top-full mt-2 z-40 w-64 rounded-card bg-background border border-border shadow-2xl py-1.5 divide-y divide-border/40">
                     {COUNTRY_SCOPES.map((c) => (
                       <button
                         key={c.code}
                         type="button"
-                        role="option"
-                        aria-selected={c.code === countryCode}
                         onClick={() => {
                           setCountryCode(c.code);
                           setCountryMenuOpen(false);
                         }}
-                        className={`w-full flex items-center justify-between px-3.5 py-2 text-sm text-left transition-colors duration-150 ${
+                        className={`w-full flex items-center justify-between px-3.5 py-2 text-sm text-left transition-colors ${
                           c.code === countryCode
-                            ? 'bg-surface-hover font-semibold text-foreground'
+                            ? 'bg-surface font-bold text-foreground'
                             : 'text-foreground hover:bg-surface'
                         }`}
                       >
@@ -484,7 +781,7 @@ export default function App() {
                             src={c.flagUrl}
                             alt=""
                             referrerPolicy="no-referrer"
-                            className="w-5 h-5 rounded-full object-cover"
+                            className="w-4 h-4 rounded-full object-cover"
                           />
                           <span>{c.name}</span>
                         </span>
@@ -495,12 +792,11 @@ export default function App() {
                 )}
               </div>
 
-              {/* Sticky Category Round-Tabs Bar */}
-              <div className="sticky top-16 z-20 bg-background/95 py-3 mb-8 border-b border-border">
+              {/* Sticky Category Tabs Bar */}
+              <div className="sticky top-14 z-20 bg-background/95 backdrop-blur-xs py-2.5 mb-6 border-b border-border">
                 <div
                   role="tablist"
-                  aria-label="Market asset classes"
-                  className="flex flex-wrap items-center gap-1.5"
+                  className="flex flex-wrap items-center gap-1.5 text-xs font-semibold"
                 >
                   {CATEGORY_TABS.map((tab) => {
                     const selected = activeCategory === tab.id;
@@ -511,10 +807,10 @@ export default function App() {
                         role="tab"
                         aria-selected={selected}
                         onClick={() => handleOpenCategory(tab.id)}
-                        className={`px-3.5 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-primary ${
+                        className={`px-3 py-1 rounded-full whitespace-nowrap transition-colors duration-150 ${
                           selected
                             ? 'bg-ink-button text-ink-button-fg'
-                            : 'text-foreground hover:bg-surface-hover'
+                            : 'text-muted hover:text-foreground hover:bg-surface-hover'
                         }`}
                       >
                         {tab.id === 'stocks' ? countryScope.stocksTitle : tab.label}
@@ -547,52 +843,28 @@ export default function App() {
           )}
         </main>
 
-        {/* TradingView Footer */}
-        <footer className="border-t border-border bg-surface mt-auto">
-          <div className="max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-8">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-              <div className="space-y-3">
-                <div className="inline-flex items-center gap-2 text-lg font-bold tracking-tight">
-                  <TradingViewMark />
-                  <span>TradingView</span>
-                </div>
-                {!lookFirstFailed ? (
-                  <img
-                    src={lookFirstSrc}
-                    alt="Look first / Then leap."
-                    referrerPolicy="no-referrer"
-                    onError={() => setLookFirstFailed(true)}
-                    className="h-6 w-auto block"
-                  />
-                ) : (
-                  <p className="text-sm font-semibold text-muted">Look first / Then leap.</p>
-                )}
+        {/* Pro Terminal Footer */}
+        <footer className="border-t border-border bg-surface/50 mt-auto">
+          <div className="max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-center gap-2 font-bold tracking-tight text-sm">
+                <TradingViewMark />
+                <span>TradingView Markets Pro Terminal</span>
               </div>
-
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-                {CATEGORY_TABS.map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => handleOpenCategory(tab.id)}
-                    className="text-muted hover:text-foreground transition-colors duration-150 whitespace-nowrap"
-                  >
-                    {tab.label}
-                  </button>
-                ))}
+              <div className="flex flex-wrap items-center gap-4 text-xs text-muted">
+                <span>Real-Time Simulated Market Data</span>
+                <span>·</span>
+                <span>Level 2 Depth of Market</span>
+                <span>·</span>
+                <span>Paper Trading Suite</span>
+                <span>·</span>
+                <span>Institutional Macro Heatmaps</span>
               </div>
-            </div>
-
-            <div className="pt-6 border-t border-border/60 flex flex-wrap items-center justify-between gap-4 text-xs text-muted">
-              <span>
-                Market data across indices, equities, crypto, futures, FX, sovereign & corporate bonds, and ETFs.
-              </span>
-              <span>Quotes in local instrument currencies · Simulated real-time feed</span>
             </div>
           </div>
         </footer>
 
-        {/* Global Symbol Search Modal */}
+        {/* Symbol Search Modal */}
         <SearchModal
           isOpen={searchOpen}
           onClose={() => setSearchOpen(false)}
@@ -602,7 +874,7 @@ export default function App() {
           onSelectSymbol={handleSelectSymbol}
         />
 
-        {/* Collapsible Right Watchlist Drawer */}
+        {/* Watchlist Drawer */}
         <WatchlistDrawer
           isOpen={watchlistOpen}
           onClose={() => setWatchlistOpen(false)}
